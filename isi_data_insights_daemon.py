@@ -2,6 +2,7 @@ from daemons.prefab import run
 import logging
 import sys
 import time
+import socket
 import urllib3.exceptions
 
 from isi_stats_client import IsiStatsClient
@@ -171,6 +172,12 @@ class IsiDataInsightsDaemon(run.RunDaemon):
             self._stats_processor.stop()
         super(IsiDataInsightsDaemon, self).shutdown(signum)
 
+    def dnsresolves(self, hostname):
+        try:
+            socket.gethostbyname(hostname)
+            return True
+        except socket.error:
+            return False
 
     def _query_and_process_stats(self, cur_time):
         """
@@ -209,20 +216,24 @@ class IsiDataInsightsDaemon(run.RunDaemon):
             stats_client = \
                     IsiStatsClient(
                             cluster.isi_sdk.StatisticsApi(cluster.api_client))
-            # query the current cluster with the current set of stats
-            try:
-                if cluster.version >= 8.0:
-                    results = stats_client.query_stats(stats)
-                else:
-                    results = []
-                    for stat in stats:
-                        result = stats_client.query_stat(stat)
-                        results.extend(result)
+            # check if the isilon cluster responds to dns queries
+            if self.dnsresolves(cluster.address):
+                # query the current cluster with the current set of stats
+                try:
+                    if cluster.version >= 8.0:
+                        results = stats_client.query_stats(stats)
+                    else:
+                        results = []
+                        for stat in stats:
+                            result = stats_client.query_stat(stat)
+                            results.extend(result)
 
-            except (urllib3.exceptions.HTTPError,
-                    cluster.isi_sdk.rest.ApiException) as http_exc:
-                LOG.error("Failed to query stats from cluster %s, exception "\
-                          "raised: %s", cluster.name, str(http_exc))
-                continue
-            # process the results
-            self._stats_processor.process(cluster.name, results)
+                except (urllib3.exceptions.HTTPError,
+                        cluster.isi_sdk.rest.ApiException) as http_exc:
+                    LOG.error("Failed to query stats from cluster %s, exception "\
+                              "raised: %s", cluster.name, str(http_exc))
+                    continue
+                # process the results
+                self._stats_processor.process(cluster.name, results)
+            else:
+                LOG.error("Error to resolve dns for cluster %s", cluster.name)
