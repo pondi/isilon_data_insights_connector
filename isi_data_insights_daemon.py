@@ -228,8 +228,7 @@ class IsiDataInsightsDaemon(run.RunDaemon):
                             result = stats_client.query_stat(stat)
                             results.extend(result)
 
-                except (urllib3.exceptions.HTTPError,
-                        cluster.isi_sdk.rest.ApiException) as http_exc:
+                except Exception as http_exc:
                     LOG.error("Failed to query stats from cluster %s, exception "\
                               "raised: %s", cluster.name, str(http_exc))
                     continue
